@@ -1,87 +1,38 @@
 package multithreadedchatapp;
+
 import java.io.*;
 import java.net.*;
-import java.util.*;
 
-public class ChatServer {
-    private static final int PORT = 12345;
-    private static Set<ClientHandler> clientHandlers = Collections.synchronizedSet(new HashSet<>());
+public class ChatClient {
+    private static final String SERVER_IP = "localhost";
+    private static final int SERVER_PORT = 12345;
 
     public static void main(String[] args) {
-        System.out.println("Chat server started...");
-        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
-            while (true) {
-                Socket clientSocket = serverSocket.accept();
-                System.out.println("New client connected: " + clientSocket);
-                ClientHandler clientHandler = new ClientHandler(clientSocket);
-                clientHandlers.add(clientHandler);
-                new Thread(clientHandler).start();
+        try (Socket socket = new Socket(SERVER_IP, SERVER_PORT);
+             BufferedReader keyboard = new BufferedReader(new InputStreamReader(System.in));
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
+
+            // Thread to listen for server messages
+            Thread readThread = new Thread(() -> {
+                try {
+                    String serverMessage;
+                    while ((serverMessage = in.readLine()) != null) {
+                        System.out.println(serverMessage);
+                    }
+                } catch (IOException e) {
+                    System.out.println("Connection closed.");
+                }
+            });
+            readThread.start();
+
+            // Send messages from keyboard to server
+            String userInput;
+            while ((userInput = keyboard.readLine()) != null) {
+                out.println(userInput);
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
-
-    public static void broadcastMessage(String message, ClientHandler sender) {
-        synchronized (clientHandlers) {
-            for (ClientHandler client : clientHandlers) {
-                if (client != sender) {
-                    client.sendMessage(message);
-                }
-            }
-        }
-    }
-
-    public static void removeClient(ClientHandler clientHandler) {
-        clientHandlers.remove(clientHandler);
-        System.out.println("Client disconnected: " + clientHandler.clientSocket);
-    }
-
-    static class ClientHandler implements Runnable {
-        private Socket clientSocket;
-        private BufferedReader in;
-        private PrintWriter out;
-        private String clientName;
-
-        public ClientHandler(Socket socket) {
-            this.clientSocket = socket;
-            try {
-                in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                out = new PrintWriter(clientSocket.getOutputStream(), true);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-
-        public void sendMessage(String message) {
-            out.println(message);
-        }
-
-        @Override
-        public void run() {
-            try {
-                out.println("Enter your name:");
-                clientName = in.readLine();
-                System.out.println(clientName + " joined the chat.");
-                broadcastMessage(clientName + " joined the chat.", this);
-
-                String message;
-                while ((message = in.readLine()) != null) {
-                    System.out.println(clientName + ": " + message);
-                    broadcastMessage(clientName + ": " + message, this);
-                }
-            } catch (IOException e) {
-                System.out.println("Error handling client: " + e.getMessage());
-            } finally {
-                try {
-                    clientSocket.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                removeClient(this);
-                broadcastMessage(clientName + " left the chat.", this);
-            }
-        }
-    }
-
 }
